@@ -5,6 +5,8 @@ public class TexelDensityToolWindow : EditorWindow
 {
 	private GameObject _targetObject;
 	private int _textureResolution = 2048;
+	private string _resultText = "";
+	private Vector2 _scroll; 
 
 	[MenuItem("Tools/Texel Density/Calculator")]
 	public static void Open()
@@ -32,6 +34,18 @@ public class TexelDensityToolWindow : EditorWindow
 				Calculate();
 			}
 		}
+		
+		GUILayout.Space(10);
+		
+		if (string.IsNullOrEmpty(_resultText))
+		{
+			return;
+		}
+		
+		EditorGUILayout.LabelField("Result",  EditorStyles.boldLabel);
+		_scroll = EditorGUILayout.BeginScrollView(_scroll, GUILayout.Height(200));
+		EditorGUILayout.TextArea(_resultText);
+		EditorGUILayout.EndScrollView();
 	}
 
 	private void Calculate()
@@ -40,7 +54,12 @@ public class TexelDensityToolWindow : EditorWindow
 		{
 			return;
 		}
-
+		
+		_resultText = "";
+		float totalWorldArea = 0f;
+		float totalUvArea = 0f;
+		int validMeshCount = 0;
+		
 		MeshFilter[] meshFilters = _targetObject.GetComponentsInChildren<MeshFilter>();
 		if (meshFilters.Length == 0)
 		{
@@ -66,13 +85,25 @@ public class TexelDensityToolWindow : EditorWindow
 				continue;
 			}
 
+			totalWorldArea += worldArea;
+			totalUvArea += uvArea;
+			validMeshCount++;
 			float texelDensity = _textureResolution * Mathf.Sqrt(uvArea / worldArea);
-
-			Debug.Log(
-				$"[TexelDensity] {meshFilter.gameObject.name} | " +
-				$"WorldArea={worldArea:F3} | UVArea={uvArea:F3} | " +
-				$"TD={texelDensity:F2} px/m"
-			);
+			_resultText +=  $"{meshFilter.gameObject.name} | TD = {texelDensity:F2} px/m\n";
+		}
+		
+		_resultText += "\n--- Overall ---\n";
+		if (validMeshCount == 0 || totalWorldArea <= 0f || totalUvArea <= 0f)
+		{
+			_resultText += "Overall TD: N/A (no valid meshes)\n";
+		}
+		else
+		{
+			float overallTd = _textureResolution * Mathf.Sqrt(totalUvArea / totalWorldArea);
+			_resultText += $"Meshes: {validMeshCount}\n";
+			_resultText += $"Total World Area: {totalWorldArea:F3} m²\n";
+			_resultText += $"Total UV Area: {totalUvArea:F3}\n";
+			_resultText += $"Overall Texel Density: {overallTd:F2} px/m\n";
 		}
 	}
 
