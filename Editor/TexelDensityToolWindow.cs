@@ -67,7 +67,9 @@ public class TexelDensityToolWindow : EditorWindow
 		int validMeshCount = 0;
 		
 		MeshFilter[] meshFilters = _targetObject.GetComponentsInChildren<MeshFilter>();
-		if (meshFilters.Length == 0)
+		SkinnedMeshRenderer[] skinnedMeshRenderers = _targetObject.GetComponentsInChildren<SkinnedMeshRenderer>();
+		
+		if (meshFilters.Length == 0 && skinnedMeshRenderers.Length == 0)
 		{
 			Debug.LogWarning("No MeshFilters found under target object.");
 			return;
@@ -75,38 +77,26 @@ public class TexelDensityToolWindow : EditorWindow
 
 		foreach (MeshFilter meshFilter in meshFilters)
 		{
-			if (meshFilter.sharedMesh == null)
-			{
-				continue;
-			}
-
-			Mesh mesh = meshFilter.sharedMesh;
-
-			float worldArea = CalculateWorldArea(mesh, meshFilter.transform.localToWorldMatrix);
-			float uvArea = CalculateUvArea(mesh);
-
-			if (worldArea <= 0f || uvArea <= 0f)
-			{
-				Debug.LogWarning($"[{meshFilter.gameObject.name}] Invalid area (World:{worldArea}, UV:{uvArea})");
-				continue;
-			}
-
-			totalWorldArea += worldArea;
-			totalUvArea += uvArea;
-			validMeshCount++;
-			float texelDensity = _textureResolution * Mathf.Sqrt(uvArea / worldArea);
-
-			string status = GetTexelDensityStatus(
-				texelDensity,
-				_targetTexelDensity,
-				TOLERANCE_PERCENT
+			ProcessMesh(
+				meshFilter.sharedMesh,
+				meshFilter.transform,
+				meshFilter.gameObject.name,
+				ref totalWorldArea,
+				ref totalUvArea,
+				ref validMeshCount
 			);
-			
-			_resultText +=
-				$"{meshFilter.gameObject.name} | " + 
-				$"TD = {texelDensity:F2} px/m | " + 
-				$"Target = {_targetTexelDensity:F0} | " + 
-				$"Status = {status}\n";
+		}
+		
+		foreach (SkinnedMeshRenderer skinnedRenderer in skinnedMeshRenderers)
+		{
+			ProcessMesh(
+				skinnedRenderer.sharedMesh,
+				skinnedRenderer.transform,
+				skinnedRenderer.gameObject.name + " (Skinned)",
+				ref totalWorldArea,
+				ref totalUvArea,
+				ref validMeshCount
+			);
 		}
 		
 		_resultText += "\n--- Overall ---\n";
@@ -184,5 +174,40 @@ public class TexelDensityToolWindow : EditorWindow
 		}
 		
 		return differencePercent > tolerancePercent ? "HIGH" : "OK";
+	}
+
+	private void ProcessMesh(
+		Mesh mesh,
+		Transform transform,
+		string displayName,
+		ref float totalWorldArea,
+		ref float totalUvArea,
+		ref int validMeshCount
+	)
+	{
+		if (mesh == null)
+		{
+			return;
+		}
+		
+		float worldArea = CalculateWorldArea(mesh, transform.localToWorldMatrix);
+		float uvArea = CalculateUvArea(mesh);
+		
+		if (worldArea <= 0f || uvArea <= 0f)
+		{
+			_resultText += $"{displayName} | ERROR: World={worldArea:F3}, UV={uvArea:F3}\n";
+			return;
+		}
+		float texelDensity = _textureResolution * Mathf.Sqrt(uvArea / worldArea);
+		string status = GetTexelDensityStatus(texelDensity, _targetTexelDensity, TOLERANCE_PERCENT);
+		
+		_resultText +=
+			$"{displayName} | " +
+			$"TD = {texelDensity:F2} px/m | " +
+			$"Status = {status}\n";
+		
+		totalWorldArea += worldArea;
+		totalUvArea += uvArea;
+		validMeshCount++;
 	}
 }
