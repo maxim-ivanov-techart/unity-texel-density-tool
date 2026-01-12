@@ -6,7 +6,10 @@ public class TexelDensityToolWindow : EditorWindow
 	private GameObject _targetObject;
 	private int _textureResolution = 2048;
 	private string _resultText = "";
-	private Vector2 _scroll; 
+	private Vector2 _scroll;
+	private float _targetTexelDensity = 2048f;
+
+	private const float TOLERANCE_PERCENT = 10f;
 
 	[MenuItem("Tools/Texel Density/Calculator")]
 	public static void Open()
@@ -24,6 +27,9 @@ public class TexelDensityToolWindow : EditorWindow
 			"Texture Resolution", _textureResolution,
 			new[] { "512", "1024", "2048", "4096" },
 			new[] { 512, 1024, 2048, 4096 });
+
+		_targetTexelDensity = EditorGUILayout.FloatField(
+			"Target Texel Density (px/m)", _targetTexelDensity);
 
 		GUILayout.Space(10);
 
@@ -89,7 +95,18 @@ public class TexelDensityToolWindow : EditorWindow
 			totalUvArea += uvArea;
 			validMeshCount++;
 			float texelDensity = _textureResolution * Mathf.Sqrt(uvArea / worldArea);
-			_resultText +=  $"{meshFilter.gameObject.name} | TD = {texelDensity:F2} px/m\n";
+
+			string status = GetTexelDensityStatus(
+				texelDensity,
+				_targetTexelDensity,
+				TOLERANCE_PERCENT
+			);
+			
+			_resultText +=
+				$"{meshFilter.gameObject.name} | " + 
+				$"TD = {texelDensity:F2} px/m | " + 
+				$"Target = {_targetTexelDensity:F0} | " + 
+				$"Status = {status}\n";
 		}
 		
 		_resultText += "\n--- Overall ---\n";
@@ -100,10 +117,19 @@ public class TexelDensityToolWindow : EditorWindow
 		else
 		{
 			float overallTd = _textureResolution * Mathf.Sqrt(totalUvArea / totalWorldArea);
-			_resultText += $"Meshes: {validMeshCount}\n";
-			_resultText += $"Total World Area: {totalWorldArea:F3} m²\n";
-			_resultText += $"Total UV Area: {totalUvArea:F3}\n";
-			_resultText += $"Overall Texel Density: {overallTd:F2} px/m\n";
+			string overallStatus = GetTexelDensityStatus(
+				overallTd,
+				_targetTexelDensity,
+				TOLERANCE_PERCENT
+			);
+			
+			_resultText +=
+				$"Meshes counted: {validMeshCount}\n" + 
+				$"Total World Area: {totalWorldArea:F3} m²\n" + 
+				$"Total UV Area: {totalUvArea:F3}\n" + 
+				$"Overall TD: {overallTd:F2} px/m\n" + 
+				$"Target TD: {_targetTexelDensity:F0} px/m\n" + 
+				$"Status: {overallStatus}\n";
 		}
 	}
 
@@ -145,5 +171,18 @@ public class TexelDensityToolWindow : EditorWindow
 			area += 0.5 * System.Math.Abs(cross);
 		}
 		return (float)area;
+	}
+
+	private string GetTexelDensityStatus(float texelDensity, float targetTexelDensity, float tolerancePercent)
+	{
+		float differencePercent =
+			(texelDensity - targetTexelDensity) / targetTexelDensity * 100f;
+
+		if (differencePercent < -tolerancePercent)
+		{
+			return "LOW";
+		}
+		
+		return differencePercent > tolerancePercent ? "HIGH" : "OK";
 	}
 }
