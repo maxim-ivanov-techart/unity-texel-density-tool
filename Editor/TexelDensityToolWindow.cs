@@ -8,8 +8,7 @@ public class TexelDensityToolWindow : EditorWindow
 	private string _resultText = "";
 	private Vector2 _scroll;
 	private float _targetTexelDensity = 2048f;
-
-	private const float TOLERANCE_PERCENT = 10f;
+	private float _tolerancePercent = 10f;
 
 	[MenuItem("Tools/Texel Density/Calculator")]
 	public static void Open()
@@ -30,6 +29,11 @@ public class TexelDensityToolWindow : EditorWindow
 
 		_targetTexelDensity = EditorGUILayout.FloatField(
 			"Target Texel Density (px/m)", _targetTexelDensity);
+		
+		_tolerancePercent = EditorGUILayout.FloatField(
+			"Tolerance (%)",
+			_tolerancePercent
+		);
 
 		GUILayout.Space(10);
 
@@ -110,7 +114,7 @@ public class TexelDensityToolWindow : EditorWindow
 			string overallStatus = GetTexelDensityStatus(
 				overallTd,
 				_targetTexelDensity,
-				TOLERANCE_PERCENT
+				_tolerancePercent
 			);
 			
 			_resultText +=
@@ -199,7 +203,7 @@ public class TexelDensityToolWindow : EditorWindow
 			return;
 		}
 		float texelDensity = _textureResolution * Mathf.Sqrt(uvArea / worldArea);
-		string status = GetTexelDensityStatus(texelDensity, _targetTexelDensity, TOLERANCE_PERCENT);
+		string status = GetTexelDensityStatus(texelDensity, _targetTexelDensity, _tolerancePercent);
 		
 		_resultText +=
 			$"{displayName} | " +
