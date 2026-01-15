@@ -1,14 +1,23 @@
 using UnityEditor;
 using UnityEngine;
+using System.Collections.Generic;
 
 public class TexelDensityToolWindow : EditorWindow
 {
+	private enum ScopeMode { SceneObject, PrefabAsset, FolderBatch }
+	
+	private ScopeMode _scopeMode = ScopeMode.SceneObject;
 	private GameObject _targetObject;
+	private Object _targetAsset;
+	private DefaultAsset _targetFolder;
+	private List<string> _batchAssetPaths = new ();
+	
 	private int _textureResolution = 2048;
-	private string _resultText = "";
-	private Vector2 _scroll;
 	private float _targetTexelDensity = 2048f;
 	private float _tolerancePercent = 10f;
+	
+	private Vector2 _scroll;
+	private string _resultText = "";
 
 	[MenuItem("Tools/Texel Density/Calculator")]
 	public static void Open()
@@ -19,8 +28,29 @@ public class TexelDensityToolWindow : EditorWindow
 	public void OnGUI()
 	{
 		EditorGUILayout.LabelField("Texel Density Calculator", EditorStyles.boldLabel);
-		_targetObject = (GameObject)EditorGUILayout.ObjectField(
-			"Target Object", _targetObject, typeof(GameObject), true);
+		_scopeMode = (ScopeMode)GUILayout.Toolbar(
+			(int)_scopeMode,
+			new[] { "Scene Object", "Prefab/Model", "Folder (Batch)" }
+		);
+		EditorGUILayout.HelpBox($"Mode: {_scopeMode}", MessageType.Info);
+		
+		switch (_scopeMode)
+		{
+			case ScopeMode.SceneObject:
+				_targetObject = (GameObject)EditorGUILayout.ObjectField(
+					"Target Object (Scene)", _targetObject, typeof(GameObject), true);
+				break;
+
+			case ScopeMode.PrefabAsset:
+				_targetAsset = EditorGUILayout.ObjectField(
+					"Target Asset (Prefab/FBX)", _targetAsset, typeof(Object), false);
+				break;
+
+			case ScopeMode.FolderBatch:
+				_targetFolder = (DefaultAsset)EditorGUILayout.ObjectField(
+					"Target Folder", _targetFolder, typeof(DefaultAsset), false);
+				break;
+		}
 		
 		_textureResolution = EditorGUILayout.IntPopup(
 			"Texture Resolution", _textureResolution,
@@ -37,11 +67,29 @@ public class TexelDensityToolWindow : EditorWindow
 
 		GUILayout.Space(10);
 
-		using (new EditorGUI.DisabledScope(_targetObject == null))
+		bool canCalculate =
+			(_scopeMode == ScopeMode.SceneObject && _targetObject != null) ||
+			(_scopeMode == ScopeMode.PrefabAsset  && _targetAsset != null)  ||
+			(_scopeMode == ScopeMode.FolderBatch  && _targetFolder != null);
+
+		using (new EditorGUI.DisabledScope(!canCalculate))
 		{
 			if (GUILayout.Button("Calculate"))
 			{
-				Calculate();
+				switch (_scopeMode)
+				{
+					case ScopeMode.SceneObject:
+						CalculateSceneObject();
+						break;
+
+					case ScopeMode.PrefabAsset:
+						CalculatePrefabOrModelAsset();
+						break;
+
+					case ScopeMode.FolderBatch:
+						ScanFolder();
+						break;
+				}
 			}
 		}
 		
@@ -58,7 +106,7 @@ public class TexelDensityToolWindow : EditorWindow
 		EditorGUILayout.EndScrollView();
 	}
 
-	private void Calculate()
+	private void CalculateSceneObject()
 	{
 		if (_targetObject == null)
 		{
@@ -66,64 +114,91 @@ public class TexelDensityToolWindow : EditorWindow
 		}
 		
 		_resultText = "";
-		float totalWorldArea = 0f;
-		float totalUvArea = 0f;
-		int validMeshCount = 0;
-		
-		MeshFilter[] meshFilters = _targetObject.GetComponentsInChildren<MeshFilter>();
-		SkinnedMeshRenderer[] skinnedMeshRenderers = _targetObject.GetComponentsInChildren<SkinnedMeshRenderer>();
-		
-		if (meshFilters.Length == 0 && skinnedMeshRenderers.Length == 0)
+		CalculateForRoot(_targetObject);
+	}
+	
+	private void CalculatePrefabOrModelAsset()
+	{
+		_resultText = "";
+		if (_targetAsset == null)
 		{
-			Debug.LogWarning("No MeshFilters found under target object.");
 			return;
 		}
+		
+		string assetPath = AssetDatabase.GetAssetPath(_targetAsset);
+		GameObject assetRoot = AssetDatabase.LoadAssetAtPath<GameObject>(assetPath);
+		
+		if (assetRoot == null)
+		{
+			_resultText = "Selected asset is not a GameObject (Prefab/Model).";
+			return;
+		}
+		
+		GameObject tempInstance = Instantiate(assetRoot);
+		
+		tempInstance.hideFlags = HideFlags.HideAndDontSave;
+		tempInstance.transform.position = Vector3.zero;
+		tempInstance.transform.rotation = Quaternion.identity;
+		tempInstance.transform.localScale = Vector3.one;
+		
+		CalculateForRoot(tempInstance);
+		DestroyImmediate(tempInstance);
+	}
+	
+	private void ScanFolder()
+	{
+		if (_targetFolder == null)
+		{
+			_resultText = "Please select a folder first.";
+			return;
+		}
+		
+		string folderPath = AssetDatabase.GetAssetPath(_targetFolder);
+		
+		_batchAssetPaths.Clear();
+		_resultText = "";
+		
+		string[] prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { folderPath });
+		string[] modelGuids = AssetDatabase.FindAssets("t:Model", new[] { folderPath });
+		
+		AddGuidsToBatchList(prefabGuids);
+		AddGuidsToBatchList(modelGuids);
+		
+		if (_batchAssetPaths.Count == 0)
+		{
+			_resultText = $"No Prefabs or Models found in folder:\n{folderPath}";
+			return;
+		}
+		
+		_resultText = "";
 
-		foreach (MeshFilter meshFilter in meshFilters)
+		for (int i = 0; i < _batchAssetPaths.Count; i++)
 		{
-			ProcessMesh(
-				meshFilter.sharedMesh,
-				meshFilter.transform,
-				meshFilter.gameObject.name,
-				ref totalWorldArea,
-				ref totalUvArea,
-				ref validMeshCount
-			);
-		}
-		
-		foreach (SkinnedMeshRenderer skinnedRenderer in skinnedMeshRenderers)
-		{
-			ProcessMesh(
-				skinnedRenderer.sharedMesh,
-				skinnedRenderer.transform,
-				skinnedRenderer.gameObject.name + " (Skinned)",
-				ref totalWorldArea,
-				ref totalUvArea,
-				ref validMeshCount
-			);
-		}
-		
-		_resultText += "\n--- Overall ---\n";
-		if (validMeshCount == 0 || totalWorldArea <= 0f || totalUvArea <= 0f)
-		{
-			_resultText += "Overall TD: N/A (no valid meshes)\n";
-		}
-		else
-		{
-			float overallTd = _textureResolution * Mathf.Sqrt(totalUvArea / totalWorldArea);
-			string overallStatus = GetTexelDensityStatus(
-				overallTd,
-				_targetTexelDensity,
-				_tolerancePercent
-			);
+			string path = _batchAssetPaths[i];
+			GameObject assetRoot = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+
+			if (assetRoot == null)
+			{
+				_resultText += $"{i + 1}. {path}\nERROR: not a GameObject\n\n";
+				continue;
+			}
+
+			GameObject tempInstance = Instantiate(assetRoot);
+			tempInstance.hideFlags = HideFlags.HideAndDontSave;
+
+			tempInstance.transform.position = Vector3.zero;
+			tempInstance.transform.rotation = Quaternion.identity;
+			tempInstance.transform.localScale = Vector3.one;
 			
-			_resultText +=
-				$"Meshes counted: {validMeshCount}\n" + 
-				$"Total World Area: {totalWorldArea:F3} m²\n" + 
-				$"Total UV Area: {totalUvArea:F3}\n" + 
-				$"Overall TD: {overallTd:F2} px/m\n" + 
-				$"Target TD: {_targetTexelDensity:F0} px/m\n" + 
-				$"Status: {overallStatus}\n";
+			_resultText += $"==============================\n";
+			_resultText += $"{i + 1}. {path}\n";
+			_resultText += $"==============================\n";
+			
+			CalculateForRoot(tempInstance);
+
+			_resultText += "\n\n";
+
+			DestroyImmediate(tempInstance);
 		}
 	}
 
@@ -213,5 +288,83 @@ public class TexelDensityToolWindow : EditorWindow
 		totalWorldArea += worldArea;
 		totalUvArea += uvArea;
 		validMeshCount++;
+	}
+	
+	private void CalculateForRoot(GameObject root)
+	{
+		float totalWorldArea = 0f;
+		float totalUvArea = 0f;
+		int validMeshCount = 0;
+		
+		MeshFilter[] meshFilters = root.GetComponentsInChildren<MeshFilter>();
+		SkinnedMeshRenderer[] skinnedMeshRenderers = root.GetComponentsInChildren<SkinnedMeshRenderer>();
+		
+		if (meshFilters.Length == 0 && skinnedMeshRenderers.Length == 0)
+		{
+			Debug.LogWarning("No MeshFilters found under target object.");
+			return;
+		}
+		
+		_tolerancePercent = Mathf.Max(0f, _tolerancePercent);
+		
+		foreach (MeshFilter meshFilter in meshFilters)
+		{
+			ProcessMesh(
+				meshFilter.sharedMesh,
+				meshFilter.transform,
+				meshFilter.gameObject.name,
+				ref totalWorldArea,
+				ref totalUvArea,
+				ref validMeshCount
+			);
+		}
+
+		foreach (SkinnedMeshRenderer skinnedRenderer in skinnedMeshRenderers)
+		{
+			ProcessMesh(
+				skinnedRenderer.sharedMesh,
+				skinnedRenderer.transform,
+				skinnedRenderer.gameObject.name + " (Skinned)",
+				ref totalWorldArea,
+				ref totalUvArea,
+				ref validMeshCount
+			);
+		}
+		
+		_resultText += "\n--- Overall ---\n";
+		if (validMeshCount == 0 || totalWorldArea <= 0f || totalUvArea <= 0f)
+		{
+			_resultText += "Overall TD: N/A (no valid meshes)\n";
+		}
+		else
+		{
+			float overallTd = _textureResolution * Mathf.Sqrt(totalUvArea / totalWorldArea);
+			string overallStatus = GetTexelDensityStatus(
+				overallTd,
+				_targetTexelDensity,
+				_tolerancePercent
+			);
+			
+			_resultText +=
+				$"Meshes counted: {validMeshCount}\n" + 
+				$"Total World Area: {totalWorldArea:F3} m²\n" + 
+				$"Total UV Area: {totalUvArea:F3}\n" + 
+				$"Overall TD: {overallTd:F2} px/m\n" + 
+				$"Target TD: {_targetTexelDensity:F0} px/m\n" + 
+				$"Status: {overallStatus}\n";
+		}
+	}
+	
+	private void AddGuidsToBatchList(string[] guids)
+	{
+		foreach (string guid in guids)
+		{
+			string path = AssetDatabase.GUIDToAssetPath(guid);
+
+			if (!_batchAssetPaths.Contains(path))
+			{
+				_batchAssetPaths.Add(path);
+			}
+		}
 	}
 }
