@@ -4,6 +4,10 @@ using System;
 using System.Collections.Generic;
 using Object = UnityEngine.Object;
 
+/// <summary>
+/// Editor window for calculating mesh texel density in scenes, prefabs, and asset folders.
+/// Allows analyzing whether texel density matches a given target value, taking tolerance into account.
+/// </summary>
 public class TexelDensityToolWindow : EditorWindow
 {
 	private enum ScopeMode { SceneObject, PrefabAsset, FolderBatch }
@@ -101,12 +105,18 @@ public class TexelDensityToolWindow : EditorWindow
 	private Status _overallStatus;
 	private int _overallMeshCount;
 
+	/// <summary>
+	/// Opens the texel density calculator window.
+	/// </summary>
 	[MenuItem("Tools/Texel Density/Calculator")]
 	public static void Open()
 	{
 		GetWindow<TexelDensityToolWindow>("Texel Density");
 	}
 	
+	/// <summary>
+	/// Draws the editor window GUI, including settings, calculation buttons, and results.
+	/// </summary>
 	public void OnGUI()
 	{
 		EditorGUILayout.LabelField("Texel Density Calculator", EditorStyles.boldLabel);
@@ -201,6 +211,9 @@ public class TexelDensityToolWindow : EditorWindow
 		EditorGUILayout.EndVertical();
 	}
 
+	/// <summary>
+	/// Calculates texel density for a scene object.
+	/// </summary>
 	private void CalculateSceneObject()
 	{
 		if (_targetObject == null)
@@ -211,6 +224,10 @@ public class TexelDensityToolWindow : EditorWindow
 		CalculateForRootIntoWindow(_targetObject);
 	}
 	
+	/// <summary>
+	/// Calculates texel density for a prefab/FBX model.
+	/// Creates a temporary instance of the asset for analysis.
+	/// </summary>
 	private void CalculatePrefabOrModelAsset()
 	{
 		if (_targetAsset == null)
@@ -239,6 +256,10 @@ public class TexelDensityToolWindow : EditorWindow
 		}
 	}
 	
+	/// <summary>
+	/// Iterates through the selected folder and calculates texel density for all prefabs and models.
+	/// Shows a progress bar during processing.
+	/// </summary>
 	private void ScanFolder()
 	{
 		if (_targetFolder == null)
@@ -360,6 +381,10 @@ public class TexelDensityToolWindow : EditorWindow
 		}
 	}
 
+	/// <summary>
+	/// Calculates texel density for the root object and stores the results in the window.
+	/// </summary>
+	/// <param name="root">The root GameObject to analyze.</param>
 	private void CalculateForRootIntoWindow(GameObject root)
 	{
 		_meshResults.Clear();
@@ -378,6 +403,11 @@ public class TexelDensityToolWindow : EditorWindow
 		CalculateForRoot(root, includeInactive: false, context);
 	}
 
+	/// <summary>
+	/// Calculates texel density for the root object and stores the results in the folder entry.
+	/// </summary>
+	/// <param name="root">The root GameObject to analyze.</param>
+	/// <param name="entry">The folder entry used to store the results.</param>
 	private void CalculateForRootIntoEntry(GameObject root, FolderAssetEntry entry)
 	{
 		entry.meshResults.Clear();
@@ -396,6 +426,14 @@ public class TexelDensityToolWindow : EditorWindow
 		CalculateForRoot(root, includeInactive: true, context, forceNullReference: true);
 	}
 
+	// <summary>
+	/// Main method for calculating texel density for all meshes in the object hierarchy.
+	/// Computes the overall texel density based on the total surface area in world space and UV space.
+	/// </summary>
+	/// <param name="root">The root GameObject to analyze.</param>
+	/// <param name="includeInactive">Include inactive child objects.</param>
+	/// <param name="context">Context used to store calculation results.</param>
+	/// <param name="forceNullReference">Force the use of null references (for prefabs).</param>
 	private void CalculateForRoot(
 		GameObject root,
 		bool includeInactive,
@@ -415,7 +453,7 @@ public class TexelDensityToolWindow : EditorWindow
 		int validMeshCount = 0;
 		bool foundAny = false;
 
-		foreach (MeshItem item in EnumerateMeshes(root, includeInactive, forceNullReference))
+		foreach (MeshItem item in EnumerateMeshes(root, includeInactive))
 		{
 			foundAny = true;
 
@@ -451,7 +489,13 @@ public class TexelDensityToolWindow : EditorWindow
 		context.UpdateOverall(true, overallTd, overallStatus, validMeshCount);
 	}
 
-	private IEnumerable<MeshItem> EnumerateMeshes(GameObject root, bool includeInactive, bool forceNullReference)
+	/// <summary>
+	/// Enumerates all meshes in the object hierarchy (MeshFilter and SkinnedMeshRenderer).
+	/// </summary>
+	/// <param name="root">The root object to search.</param>
+	/// <param name="includeInactive">Include inactive objects.</param>
+	/// <returns>A collection of mesh elements.</returns>
+	private IEnumerable<MeshItem> EnumerateMeshes(GameObject root, bool includeInactive)
 	{
 		MeshFilter[] meshFilters = root.GetComponentsInChildren<MeshFilter>(includeInactive);
 		for (int i = 0; i < meshFilters.Length; i++)
@@ -476,6 +520,13 @@ public class TexelDensityToolWindow : EditorWindow
 		}
 	}
 
+	/// <summary>
+	/// Computes the texel density analysis result for a single mesh.
+	/// Checks for the presence of UV coordinates, calculates areas, and determines the status.
+	/// </summary>
+	/// <param name="item">The mesh element to analyze.</param>
+	/// <param name="tolerancePercent">Tolerance percentage used to determine the status.</param>
+	/// <returns>The calculation result for the mesh.</returns>
 	private MeshResult ComputeMeshResult(MeshItem item, float tolerancePercent)
 	{
 		if (item.mesh == null)
@@ -548,6 +599,13 @@ public class TexelDensityToolWindow : EditorWindow
 		};
 	}
 
+	/// <summary>
+	/// Computes the total surface area of the mesh in world space.
+	/// Sums the areas of all triangles across all submeshes.
+	/// </summary>
+	/// <param name="mesh">The mesh to calculate.</param>
+	/// <param name="localToWorld">Transformation matrix from local space to world space.</param>
+	/// <returns>Area in square meters (m²).</returns>
 	private static float CalculateWorldArea(Mesh mesh, Matrix4x4 localToWorld)
 	{
 		if (mesh == null)
@@ -582,6 +640,12 @@ public class TexelDensityToolWindow : EditorWindow
 		return (float)area;
 	}
 
+	/// <summary>
+	/// Computes the total mesh area in UV space (channel 0).
+	/// Sums the areas of all triangles in UV coordinates.
+	/// </summary>
+	/// <param name="mesh">The mesh to calculate.</param>
+	/// <returns>The area in UV space (dimensionless value).</returns>
 	private static float CalculateUvArea(Mesh mesh)
 		{
 			if (mesh == null)
@@ -631,7 +695,14 @@ public class TexelDensityToolWindow : EditorWindow
 			}
 			return (float)area;
 		}
-
+	
+		/// <summary>
+		/// Determines the texel density status by comparing it against the target value and tolerance.
+		/// </summary>
+		/// <param name="texelDensity">Calculated texel density (px/m).</param>
+		/// <param name="targetTexelDensity">Target texel density (px/m).</param>
+		/// <param name="tolerancePercent">Allowed deviation percentage.</param>
+		/// <returns>Status: Low (below tolerance), Ok (within tolerance), High (above tolerance).</returns>
 		private Status GetTexelDensityStatus(float texelDensity, float targetTexelDensity, float tolerancePercent)
 		{
 			float differencePercent =
@@ -645,6 +716,11 @@ public class TexelDensityToolWindow : EditorWindow
 			return differencePercent > tolerancePercent ? Status.High : Status.Ok;
 		}
 
+		/// <summary>
+		/// Adds asset paths from a GUID array to the batch processing list.
+		/// Avoids duplicates.
+		/// </summary>
+		/// <param name="guids">Array of Unity asset GUIDs.</param>
 		private void AddGuidsToBatchList(string[] guids)
 		{
 			for (int i = 0; i < guids.Length; i++)
@@ -658,6 +734,10 @@ public class TexelDensityToolWindow : EditorWindow
 			}
 		}
 
+		/// <summary>
+		/// Draws the UI for the folder batch processing mode.
+		/// Displays a list of assets with expandable details.
+		/// </summary>
 		private void DrawFolderUI()
 		{
 			EditorGUILayout.LabelField("Folder Assets", EditorStyles.boldLabel);
@@ -704,6 +784,12 @@ public class TexelDensityToolWindow : EditorWindow
 			EditorGUILayout.EndScrollView();
 		}
 	
+		/// <summary>
+		/// Draws the list of mesh results as a scrollable table.
+		/// </summary>
+		/// <param name="results">List of results to display.</param>
+		/// <param name="scroll">Scroll position.</param>
+		/// <param name="height">Height of the scroll area.</param>
 		private static void DrawMeshResultsList(
 			List<MeshResult> results, 
 			ref Vector2 scroll, 
@@ -724,6 +810,9 @@ public class TexelDensityToolWindow : EditorWindow
 			EditorGUILayout.EndScrollView();
 		}
 	
+		/// <summary>
+		/// Draws the results table header with columns: Status, Mesh, TD.
+		/// </summary>
 		private static void DrawMeshResultsHeader()
 		{
 			EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
@@ -733,6 +822,11 @@ public class TexelDensityToolWindow : EditorWindow
 			EditorGUILayout.EndHorizontal();
 		}
 	
+		/// <summary>
+		/// Draws the table rows with results for each mesh.
+		/// Each row displays a color-coded status, the mesh name, and the texel density value.
+		/// </summary>
+		/// <param name="results">List of results to display.</param>
 		private static void DrawMeshResultsRows(List<MeshResult> results)
 		{
 			for (int i = 0; i < results.Count; i++)
@@ -753,6 +847,13 @@ public class TexelDensityToolWindow : EditorWindow
 			}
 		}
 	
+		/// <summary>
+		/// Returns the color used to visually represent the status in the UI.
+		/// </summary>
+		/// <param name="status">Mesh status.</param>
+		/// <returns>
+		/// Color for the status: green (Ok), orange (Low/High), red (Error), white (default).
+		/// </returns>
 		private static Color GetStatusColor(Status status)
 		{
 			switch (status)
@@ -770,6 +871,11 @@ public class TexelDensityToolWindow : EditorWindow
 			}
 		}
 	
+		/// <summary>
+		/// Resets the object transform to its default values.
+		/// Sets the position to (0, 0, 0), rotation to identity, and scale to (1, 1, 1).
+		/// </summary>
+		/// <param name="t">The Transform to reset.</param>
 		private static void ResetTransform(Transform t)
 		{
 			t.position = Vector3.zero;
