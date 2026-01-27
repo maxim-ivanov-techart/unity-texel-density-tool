@@ -192,7 +192,7 @@ public class TexelDensityToolWindow : EditorWindow
 		}
 
 		GUILayout.Space(10);
-		DrawMeshResultsList(_meshResults, ref _scroll, height: 220);
+		DrawMeshResultsList(_meshResults, ref _scroll, maxVisibleRows: 10);
 
 		GUILayout.Space(10);
 		EditorGUILayout.LabelField("Result", EditorStyles.boldLabel);
@@ -763,7 +763,7 @@ public class TexelDensityToolWindow : EditorWindow
 					continue;
 				}
 
-				DrawMeshResultsList(entry.meshResults, ref entry.scroll, height: 220);
+				DrawMeshResultsList(entry.meshResults, ref entry.scroll, maxVisibleRows: 10);
 
 				EditorGUILayout.Space(6);
 
@@ -793,7 +793,7 @@ public class TexelDensityToolWindow : EditorWindow
 		private static void DrawMeshResultsList(
 			List<MeshResult> results, 
 			ref Vector2 scroll, 
-			float height)
+			int maxVisibleRows = 10)
 		{
 			EditorGUILayout.LabelField("Meshes", EditorStyles.boldLabel);
 
@@ -805,9 +805,21 @@ public class TexelDensityToolWindow : EditorWindow
 				return;
 			}
 
-			scroll = EditorGUILayout.BeginScrollView(scroll, GUILayout.Height(height));
-			DrawMeshResultsRows(results);
-			EditorGUILayout.EndScrollView();
+			float rowHeight = EditorGUIUtility.singleLineHeight + 4f;
+			int visibleRows = Mathf.Min(results.Count, maxVisibleRows);
+			float visibleHeight = visibleRows * rowHeight;
+			
+			if (results.Count > maxVisibleRows)
+			{
+				scroll = EditorGUILayout.BeginScrollView(scroll, GUILayout.Height(visibleHeight));
+				DrawMeshResultsRows(results);
+				EditorGUILayout.EndScrollView();
+			}
+			else
+			{
+				scroll = Vector2.zero;
+				DrawMeshResultsRows(results);
+			}
 		}
 	
 		/// <summary>
